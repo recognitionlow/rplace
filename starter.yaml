@@ -1,0 +1,622 @@
+Resources:
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+      ProvisionedThroughput:
+        ReadCapacityUnits: 6
+        WriteCapacityUnits: 6
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  UserTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      ProvisionedThroughput:
+        ReadCapacityUnits: 6
+        WriteCapacityUnits: 6
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  BoardTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      KeySchema:
+        - AttributeName: coordinate
+          KeyType: HASH
+      AttributeDefinitions:
+        - AttributeName: coordinate
+          AttributeType: S
+      ProvisionedThroughput:
+        ReadCapacityUnits: 7
+        WriteCapacityUnits: 7
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  ConnectHandlerServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  ConnectHandlerServiceRoleDefaultPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - dynamodb:BatchWriteItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - ConnectionsTable
+                  - Arn
+              - Ref: AWS::NoValue
+        Version: "2012-10-17"
+      PolicyName: ConnectHandlerServiceRoleDefaultPolicy
+      Roles:
+        - Ref: ConnectHandlerServiceRole
+  ConnectHandler:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |-
+          const AWS = require('aws-sdk');
+                const ddb = new AWS.DynamoDB.DocumentClient();
+                exports.handler = async function (event, context) {
+                  console.log(JSON.stringify(event));
+                  try {
+                    await ddb
+                      .put({
+                        TableName: process.env.table,
+                        Item: {
+                          connectionId: event.requestContext.connectionId,
+                        },
+                      })
+                      .promise();
+                  } catch (err) {
+                    return {
+                      statusCode: 500,
+                      message: `fail to conncet to connection table with error: ${err} with context: ${JSON.stringify(event)}`,
+                    };
+                  }
+                  return {
+                    statusCode: 200,
+                  };
+                };
+      Role:
+        Fn::GetAtt:
+          - ConnectHandlerServiceRole
+          - Arn
+      Environment:
+        Variables:
+          table:
+            Ref: ConnectionsTable
+      Handler: index.handler
+      Runtime: nodejs16.x
+    DependsOn:
+      - ConnectHandlerServiceRoleDefaultPolicy
+      - ConnectHandlerServiceRole
+  DisconnectHandlerServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - Fn::Join:
+            - ""
+            - - "arn:"
+              - Ref: AWS::Partition
+              - :iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  DisconnectHandlerServiceRoleDefaultPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - dynamodb:BatchWriteItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:DescribeTable
+              - dynamodb:Scan
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - ConnectionsTable
+                  - Arn
+              - Ref: AWS::NoValue
+        Version: "2012-10-17"
+      PolicyName: DisconnectHandlerServiceRoleDefaultPolicy
+      Roles:
+        - Ref: DisconnectHandlerServiceRole
+  DisconnectHandler:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        ZipFile: |-
+          const AWS = require('aws-sdk');
+                const ddb = new AWS.DynamoDB.DocumentClient();
+                
+                exports.handler = async function (event, context) {
+                  await ddb
+                    .delete({
+                      TableName: process.env.table,
+                      Key: {
+                        connectionId: event.requestContext.connectionId,
+                      },
+                    })
+                    .promise();
+                  return {
+                    statusCode: 200,
+                  };
+                };
+      Role:
+        Fn::GetAtt:
+          - DisconnectHandlerServiceRole
+          - Arn
+      Environment:
+        Variables:
+          table:
+            Ref: ConnectionsTable
+      Handler: index.handler
+      Runtime: nodejs16.x
+    DependsOn:
+      - DisconnectHandlerServiceRoleDefaultPolicy
+      - DisconnectHandlerServiceRole
+  SendMessageHandlerServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  SendMessageHandlerServiceRoleDefaultPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:Query
+              - dynamodb:GetItem
+              - dynamodb:Scan
+              - dynamodb:ConditionCheckItem
+              - dynamodb:DescribeTable
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - elasticache:*
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - ConnectionsTable
+                  - Arn
+              - Fn::GetAtt:
+                  - BoardTable
+                  - Arn
+              - Fn::GetAtt:
+                  - UserTable
+                  - Arn
+              - Ref: AWS::NoValue
+        Version: "2012-10-17"
+      PolicyName: SendMessageHandlerServiceRoleDefaultPolicy
+      Roles:
+        - Ref: SendMessageHandlerServiceRole
+  SendMessageHandler:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: send-msg-handler-code
+        S3Key: Handler.zip
+      Role:
+        Fn::GetAtt:
+          - SendMessageHandlerServiceRole
+          - Arn
+      Environment:
+        Variables:
+          table:
+            Ref: ConnectionsTable
+          boardTable:
+            Ref: BoardTable
+          userTable:
+            Ref: UserTable
+      Handler: index.handler
+      Runtime: nodejs16.x
+      Timeout: 15
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-07575d9608f6fcce8
+        SubnetIds:
+          - subnet-0f63bb1c2eb92167a
+          - subnet-07482add44996196f
+          - subnet-0ae6b24bff8b1c85c
+    DependsOn:
+      - SendMessageHandlerServiceRoleDefaultPolicy
+      - SendMessageHandlerServiceRole
+  DefaultHandlerServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  DefaultHandlerServiceRoleDefaultPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:GetRecords
+              - dynamodb:GetShardIterator
+              - dynamodb:Query
+              - dynamodb:GetItem
+              - dynamodb:Scan
+              - dynamodb:DescribeTable
+              - elasticache:*
+            Effect: Allow
+            Resource:
+              - Fn::GetAtt:
+                  - BoardTable
+                  - Arn
+              - Ref: AWS::NoValue
+          - Action: execute-api:ManageConnections
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:execute-api:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - ":"
+                  - Ref: WebsocketApi
+                  - /production/POST/@connections/*
+          - Action: execute-api:ManageConnections
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:execute-api:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - ":"
+                  - Ref: WebsocketApi
+                  - /production/GET/@connections/*
+        Version: "2012-10-17"
+      PolicyName: DefaultHandlerServiceRoleDefaultPolicy
+      Roles:
+        - Ref: DefaultHandlerServiceRole
+  DefaultHandler:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: default-handler-code
+        S3Key: Handler.zip
+      Role:
+        Fn::GetAtt:
+          - DefaultHandlerServiceRole
+          - Arn
+      Environment:
+        Variables:
+          boardTable:
+            Ref: BoardTable
+      Handler: index.handler
+      Runtime: nodejs16.x
+      Timeout: 15
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-07575d9608f6fcce8
+        SubnetIds:
+          - subnet-0f63bb1c2eb92167a
+          - subnet-07482add44996196f
+          - subnet-0ae6b24bff8b1c85c
+    DependsOn:
+      - DefaultHandlerServiceRoleDefaultPolicy
+      - DefaultHandlerServiceRole
+  WebsocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: r/place
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+  WebsocketconnectRouteConnectIntegrationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - ConnectHandler
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":execute-api:"
+            - Ref: AWS::Region
+            - ":"
+            - Ref: AWS::AccountId
+            - ":"
+            - Ref: WebsocketApi
+            - /*/*$connect
+  WebsocketApiconnectRouteConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId:
+        Ref: WebsocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":apigateway:"
+            - Ref: AWS::Region
+            - :lambda:path/2015-03-31/functions/
+            - Fn::GetAtt:
+                - ConnectHandler
+                - Arn
+            - /invocations
+  WebsocketApiconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: WebsocketApi
+      RouteKey: $connect
+      AuthorizationType: NONE
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: WebsocketApiconnectRouteConnectIntegration
+  WebsocketApidisconnectRouteDisconnectIntegrationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - DisconnectHandler
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":execute-api:"
+            - Ref: AWS::Region
+            - ":"
+            - Ref: AWS::AccountId
+            - ":"
+            - Ref: WebsocketApi
+            - /*/*$disconnect
+  WebsocketApidisconnectRouteDisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId:
+        Ref: WebsocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":apigateway:"
+            - Ref: AWS::Region
+            - :lambda:path/2015-03-31/functions/
+            - Fn::GetAtt:
+                - DisconnectHandler
+                - Arn
+            - /invocations
+  WebsocketApidisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: WebsocketApi
+      RouteKey: $disconnect
+      AuthorizationType: NONE
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: WebsocketApidisconnectRouteDisconnectIntegration
+  WebsocketApidefaultRouteDefaultIntegrationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - DefaultHandler
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":execute-api:"
+            - Ref: AWS::Region
+            - ":"
+            - Ref: AWS::AccountId
+            - ":"
+            - Ref: WebsocketApi
+            - /*/*$default
+  WebsocketApidefaultRouteDefaultIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId:
+        Ref: WebsocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":apigateway:"
+            - Ref: AWS::Region
+            - :lambda:path/2015-03-31/functions/
+            - Fn::GetAtt:
+                - DefaultHandler
+                - Arn
+            - /invocations
+  WebsocketApidefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: WebsocketApi
+      RouteKey: $default
+      AuthorizationType: NONE
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: WebsocketApidefaultRouteDefaultIntegration
+  WebsocketApisendmessageRouteMessageHandlerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+          - SendMessageHandler
+          - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":execute-api:"
+            - Ref: AWS::Region
+            - ":"
+            - Ref: AWS::AccountId
+            - ":"
+            - Ref: WebsocketApi
+            - /*/*sendmessage
+  WebsocketApisendmessageRouteMessageHandler:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId:
+        Ref: WebsocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri:
+        Fn::Join:
+          - ""
+          - - "arn:"
+            - Ref: AWS::Partition
+            - ":apigateway:"
+            - Ref: AWS::Region
+            - :lambda:path/2015-03-31/functions/
+            - Fn::GetAtt:
+                - SendMessageHandler
+                - Arn
+            - /invocations
+  WebsocketApisendmessageRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Ref: WebsocketApi
+      RouteKey: sendmessage
+      AuthorizationType: NONE
+      Target:
+        Fn::Join:
+          - ""
+          - - integrations/
+            - Ref: WebsocketApisendmessageRouteMessageHandler
+  production:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId:
+        Ref: WebsocketApi
+      StageName: production
+      AutoDeploy: true
+  manageConnections:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Action: execute-api:ManageConnections
+            Effect: Allow
+            Resource:
+              Fn::Join:
+                - ""
+                - - "arn:aws:execute-api:"
+                  - Ref: AWS::Region
+                  - ":"
+                  - Ref: AWS::AccountId
+                  - ":"
+                  - "*/*/POST/@connections/*"
+        Version: "2012-10-17"
+      PolicyName: manageConnections
+      Roles:
+        - Ref: SendMessageHandlerServiceRole
+  contentDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: r-place.s3.us-east-1.amazonaws.com
+            Id: r-place.s3.us-east-1.amazonaws.com
+            S3OriginConfig:
+              OriginAccessIdentity: origin-access-identity/cloudfront/EZ4O6E2BTE5QJ
+        Enabled: true
+        DefaultRootObject: index.html
+        DefaultCacheBehavior:
+          TargetOriginId: r-place.s3.us-east-1.amazonaws.com
+          AllowedMethods:
+            - HEAD
+            - DELETE
+            - POST
+            - GET
+            - OPTIONS
+            - PUT
+            - PATCH
+          ViewerProtocolPolicy: redirect-to-https
+          ForwardedValues:
+            QueryString: true
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true

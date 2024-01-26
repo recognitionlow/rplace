@@ -1,0 +1,8 @@
+{
+  "name": "SendMessageHandler",
+  "version": "1.0.0",
+  "dependencies": {
+    "aws-sdk": "^2.1510.0",
+    "redis": "^4.6.11"
+  }
+}

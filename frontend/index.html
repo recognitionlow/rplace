@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>r/Place Clone</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+  <div class="login">
+    <div id="auth-links">
+      <button onclick="Clerk.openSignUp()">Sign Up</button>
+      <button onclick="Clerk.openSignIn()">Sign In</button>
+    </div>
+    <div id="user-button"></div>
+  </div>
+
+  <div class="color-picker-container">
+    <label for="colorPicker">Choose color: </label>
+    <input type="color" id="colorPicker" value="#000000">
+  </div>
+  <div class="error-message"></div>
+  <canvas id="canvas" width="1000" height="1000"></canvas>
+  <dialog id="dial">
+    <p>You can only draw every 5 minutes</p>
+    <button onclick="dial.close()">OK</button>
+  </dialog>
+
+  <dialog id="loading">
+    <p>Loading...</p>
+  </dialog>
+
+  <dialog id="error">
+    <p>Failed to connect to server</p>
+    <button onclick="error.close()">OK</button>
+  </dialog>
+
+  <script src="script.js"></script>
+
+</body>
+
+</html>

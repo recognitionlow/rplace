@@ -1,0 +1,2 @@
+zip -r Handler.zip .
+aws lambda update-function-code --function-name r-place-SendMessageHandler-UNI4Xn4Uq0WJ --zip-file fileb://'/Users/jingwenshi/Library/CloudStorage/OneDrive-UniversityofToronto/Year 4/CSC409/a3group88/backend/SendMessageHandler/Handler.zip'
